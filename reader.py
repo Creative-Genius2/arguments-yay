@@ -11,7 +11,11 @@ Usage:
     python reader.py ashes prologue         # search by name
     python reader.py ashes mewtwo           # search by name (partial match)
     python reader.py inklings               # read Inklings of a Legacy (full)
+    python reader.py inklings 1             # read Inklings chapter 1
+    python reader.py inklings frustration   # search Inklings by name
     python reader.py greyscale              # read Greyscale (full)
+    python reader.py greyscale 1            # read Greyscale chapter 1
+    python reader.py greyscale purpose      # search Greyscale by name
 """
 
 import sys
@@ -115,10 +119,20 @@ def list_chapters():
     print(f"\n  Total: {len(chapters)} chapters")
 
     print("\n" + "=" * 60)
-    print("USER'S STORIES")
+    print("INKLINGS OF A LEGACY")
     print("=" * 60)
-    print("  inklings  — Inklings of a Legacy")
-    print("  greyscale — Pokémon: Greyscale")
+    ink_chapters = parse_md_chapters(INKLINGS_PATH)
+    for i, ch in enumerate(ink_chapters, 1):
+        print(f"  {i:3d}. {ch['title']}")
+    print(f"\n  Total: {len(ink_chapters)} chapters")
+
+    print("\n" + "=" * 60)
+    print("POKÉMON: GREYSCALE")
+    print("=" * 60)
+    grey_chapters = parse_md_chapters(GREYSCALE_PATH)
+    for i, ch in enumerate(grey_chapters, 1):
+        print(f"  {i:3d}. {ch['title']}")
+    print(f"\n  Total: {len(grey_chapters)} chapters")
     print()
 
 
@@ -169,8 +183,28 @@ def read_ashes(query):
             print("Use 'python reader.py list' to see all chapters")
 
 
-def read_user_story(which):
-    """Read one of the user's stories in full."""
+def parse_md_chapters(path):
+    """Parse a markdown story into chapters. Handles both delimiter styles:
+    'Chapter 1: Title' (Inklings) and 'Chapter I | Title' (Greyscale)."""
+    with open(path, "r", encoding="utf-8") as f:
+        text = f.read()
+    chapters = []
+    pattern = re.compile(
+        r"^(Chapter\s+[\dIVXLCDMivxlcdm]+\s*[:|]\s*.+)$", re.MULTILINE
+    )
+    splits = pattern.split(text)
+    # splits alternates: [preamble, heading1, body1, heading2, body2, ...]
+    for i in range(1, len(splits), 2):
+        heading = splits[i].strip()
+        body = splits[i + 1].strip() if i + 1 < len(splits) else ""
+        # Strip trailing scene-break dashes
+        body = re.sub(r"\n—\s*$", "", body).strip()
+        chapters.append({"title": heading, "text": body})
+    return chapters
+
+
+def read_user_story(which, query=None):
+    """Read one of the user's stories, optionally by chapter."""
     if which == "inklings":
         path = INKLINGS_PATH
         title = "Inklings of a Legacy"
@@ -181,11 +215,61 @@ def read_user_story(which):
         print(f"Unknown story: {which}")
         return
 
-    print(f"\n{'=' * 60}")
-    print(title)
-    print(f"{'=' * 60}\n")
-    with open(path, "r", encoding="utf-8") as f:
-        print(f.read())
+    if query is None:
+        print(f"\n{'=' * 60}")
+        print(title)
+        print(f"{'=' * 60}\n")
+        with open(path, "r", encoding="utf-8") as f:
+            print(f.read())
+        return
+
+    chapters = parse_md_chapters(path)
+    if not chapters:
+        print(f"No chapters found in {title}")
+        return
+
+    # Range
+    range_match = re.match(r"^(\d+)-(\d+)$", query)
+    if range_match:
+        start, end = int(range_match.group(1)), int(range_match.group(2))
+        for num in range(start, end + 1):
+            if 1 <= num <= len(chapters):
+                ch = chapters[num - 1]
+                print(f"\n{'=' * 60}")
+                print(f"{ch['title']}")
+                print(f"{'=' * 60}\n")
+                print(ch["text"])
+        return
+
+    # Number
+    if query.isdigit():
+        num = int(query)
+        if 1 <= num <= len(chapters):
+            ch = chapters[num - 1]
+            print(f"\n{'=' * 60}")
+            print(f"{ch['title']}")
+            print(f"{'=' * 60}\n")
+            print(ch["text"])
+        else:
+            print(f"Chapter {num} out of range (1-{len(chapters)})")
+        return
+
+    # Name search
+    query_lower = query.lower()
+    matches = [
+        (i, ch)
+        for i, ch in enumerate(chapters, 1)
+        if query_lower in ch["title"].lower()
+    ]
+    if matches:
+        for num, ch in matches:
+            print(f"\n{'=' * 60}")
+            print(f"{ch['title']}")
+            print(f"{'=' * 60}\n")
+            print(ch["text"])
+    else:
+        print(f"No chapters matching '{query}' in {title}")
+        print(f"Use 'python reader.py list' to see all chapters")
 
 
 def main():
@@ -203,10 +287,9 @@ def main():
             return
         query = " ".join(sys.argv[2:])
         read_ashes(query)
-    elif cmd == "inklings":
-        read_user_story("inklings")
-    elif cmd == "greyscale":
-        read_user_story("greyscale")
+    elif cmd in ("inklings", "greyscale"):
+        query = " ".join(sys.argv[2:]) if len(sys.argv) > 2 else None
+        read_user_story(cmd, query)
     else:
         print(f"Unknown command: {cmd}")
         print("Commands: list, ashes <num>, inklings, greyscale")
